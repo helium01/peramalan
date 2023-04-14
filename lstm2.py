@@ -1,11 +1,12 @@
-# Impor pustaka yang diperlukan
-import pandas as pd
-import numpy as np
 from keras.models import Sequential
 from keras.layers import Dense, LSTM
+from sklearn.preprocessing import MinMaxScaler
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 import mysql.connector
 
-# Baca data dari file CSV
+# Load data
 mydb = mysql.connector.connect(
   host="localhost",
   user="root",
@@ -13,70 +14,61 @@ mydb = mysql.connector.connect(
   database="pengujian"
 )
 
-# Buat cursor
-mycursor = mydb.cursor()
+# Membaca data dari database
+query = "SELECT * FROM `honda` ORDER BY `honda`.`tahun` ASC"
+df = pd.read_sql(query, con=mydb)
 
-# Eksekusi query untuk mengambil data
-mycursor.execute("SELECT * FROM `honda` ORDER BY `honda`.`tahun` ASC")
-
-# Fetch semua data
-data = mycursor.fetchall()
-df = pd.DataFrame(data, columns=['tahun','minat', 'trand', 'penjualan'])
-data=df
-# Ubah format tanggal ke dalam format datetime dan set sebagai indeks
-data['tahun'] = pd.to_datetime(data['tahun'])
-data = data.set_index('tahun')
-
-# Pisahkan data menjadi data latih dan data uji
-
-train_data = data.loc[:-12]
-test_data = data.loc[-12:]
-
-# Normalisasi data
-from sklearn.preprocessing import MinMaxScaler
+myresult = df.fetchall()
+df = pd.DataFrame(myresult, columns=['tahun', 'penjualan', 'minat', 'trand'])
+cols=['tahun']
+df.drop(cols,axis=1,inplace=True)
+dataset=df
+# Normalize data
 scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_train_data = scaler.fit_transform(train_data)
-scaled_test_data = scaler.transform(test_data)
+dataset = scaler.fit_transform(dataset)
 
-# Buat data latih dan data uji
-def create_dataset(dataset, look_back=1):
+# Split data into training and testing sets
+train_size = int(len(dataset) * 0.8)
+train_data = dataset[0:train_size, :]
+test_data = dataset[train_size:len(dataset), :]
+
+# Preprocess data
+def preprocess(data, look_back=1):
     X, Y = [], []
-    for i in range(len(dataset)-look_back):
-        X.append(dataset[i:(i+look_back), :])
-        Y.append(dataset[i+look_back, 0])
+    for i in range(len(data)-look_back):
+        X.append(data[i:(i+look_back), :])
+        Y.append(data[i+look_back, 3]) # Predict sales column
     return np.array(X), np.array(Y)
 
 look_back = 3
-train_X, train_Y = create_dataset(scaled_train_data, look_back)
-test_X, test_Y = create_dataset(scaled_test_data, look_back)
+trainX, trainY = preprocess(train_data, look_back)
+testX, testY = preprocess(test_data, look_back)
 
-# Buat model LSTM
+# Define LSTM model
 model = Sequential()
-model.add(LSTM(units=50, return_sequences=True, input_shape=(train_X.shape[1], train_X.shape[2])))
-model.add(LSTM(units=50))
+model.add(LSTM(4, input_shape=(look_back, 4)))
 model.add(Dense(1))
 model.compile(loss='mean_squared_error', optimizer='adam')
 
-# Latih model
-model.fit(train_X, train_Y, epochs=100, batch_size=1, verbose=2)
+# Train the model
+model.fit(trainX, trainY, epochs=100, batch_size=1, verbose=2)
 
-# Evaluasi model pada data uji
-test_predict = model.predict(test_X)
-test_predict = scaler.inverse_transform(test_predict)
-test_Y = scaler.inverse_transform([test_Y])
-rmse = np.sqrt(np.mean((test_predict - test_Y)**2))
-print('RMSE:', rmse)
+# Make predictions
+trainPredict = model.predict(trainX)
+testPredict = model.predict(testX)
 
-# Membuat peramalan
-last_three_months = scaled_test_data[-3:, :]
-future_data = np.array([last_three_months])
-for i in range(12):
-    prediction = model.predict(future_data)
-    future_data = np.append(future_data[:, 1:, :], prediction, axis=1)
+# Inverse normalize the predictions
+trainPredict = scaler.inverse_transform(np.concatenate((trainX[:, -1, 1:], trainPredict), axis=1))[:, -1]
+testPredict = scaler.inverse_transform(np.concatenate((testX[:, -1, 1:], testPredict), axis=1))[:, -1]
 
-# Konversi hasil peramalan ke skala semula
-future_data = scaler.inverse_transform(future_data.reshape(-1, 4))
-
-# Tampilkan hasil peramalan
-print('Peramalan penjualan kendaraan untuk 12 bulan mendatang:')
-print(future_data[:, 0])
+# Plot the results
+trainPredictPlot = np.empty_like(dataset)
+trainPredictPlot[:, :] = np.nan
+trainPredictPlot[look_back:len(trainPredict)+look_back, 3] = trainPredict
+testPredictPlot = np.empty_like(dataset)
+testPredictPlot[:, :] = np.nan
+testPredictPlot[len(trainPredict)+(look_back*2)+1:len(dataset)-1, 3] = testPredict
+plt.plot(scaler.inverse_transform(dataset)[:, 3])
+plt.plot(trainPredictPlot[:, 3])
+plt.plot(testPredictPlot[:, 3])
+plt.show()

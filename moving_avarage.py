@@ -15,7 +15,7 @@ mydb = mysql.connector.connect(
 mycursor = mydb.cursor()
 
 # Eksekusi query untuk mengambil data
-mycursor.execute("SELECT tahun, penjualan, minat, trand FROM honda")
+mycursor.execute("SELECT * FROM `honda` ORDER BY `honda`.`tahun` ASC")
 
 # Fetch semua data
 data = mycursor.fetchall()
@@ -27,24 +27,26 @@ motor_sales_data = pd.DataFrame(data, columns=['tahun', 'penjualan', 'minat', 't
 motor_sales_data = motor_sales_data.set_index('tahun')
 
 # Lihat 5 data teratas
-print(motor_sales_data.head())
-
-plt.figure(figsize=(10, 5))
-plt.plot(motor_sales_data.index, motor_sales_data['penjualan'])
-plt.xlabel('Date')
-plt.ylabel('Sales')
-plt.title('Motor Sales Data')
-plt.show()
+# print(motor_sales_data.head())
+#
+# plt.figure(figsize=(10, 5))
+# plt.plot(motor_sales_data.index, motor_sales_data['penjualan'])
+# plt.xlabel('Date')
+# plt.ylabel('Sales')
+# plt.title('Motor Sales Data')
+# plt.show()
 
 motor_sales_data['moving_avg'] = motor_sales_data['penjualan'].rolling(window=3).mean()
 
 # Melihat 5 data teratas
-print(motor_sales_data.head())
+# print(motor_sales_data.head())
 
 motor_sales_data['ma_with_interest_trend'] = motor_sales_data['moving_avg'] * motor_sales_data['minat'] * motor_sales_data['trand']
 
 # Melihat 5 data teratas
-print(motor_sales_data.head())
+print(motor_sales_data)
+def hasil():
+  return motor_sales_data
 
 plt.figure(figsize=(10, 5))
 plt.plot(motor_sales_data.index, motor_sales_data['penjualan'], label='Actual Sales')
